@@ -1,0 +1,223 @@
+pkgs <- c("dplyr", "readxl","data.table","ggplot2","tidyr","Metrics","growthrates", "openxlsx","zoo", "germinationmetrics", "reshape", "reshape2", "pals", "stringr")
+lapply(pkgs, library, character.only = T)
+
+
+csv = list.files(path = path, pattern = '*.csv')
+csv_read <- function(csv){
+  df <- read.csv(paste0(path, csv)) %>%
+    dplyr::select(ObjectId,time,Area,Circularity, well, species)%>% # Select only the necessary columns to keep in the data frame
+    mutate(filename = as.character(csv))  # Add a new column that stores the name of the CSV file as a character string
+  return(df)
+}
+df <- do.call(rbind, lapply(csv, csv_read))# Combine the results into one data frame
+
+
+t <- data %>%
+  group_by(ObjectId) %>%
+  mutate(
+    InitialArea = first(Area, na.rm = TRUE), # Capture the initial area at t = 0, handling NA
+    InitialCircularity = first(Circularity, na.rm = TRUE), # Capture the initial circularity at t = 0, handling NA
+    PercentIncrease = ((Area - InitialArea) / InitialArea) * 100, # Calculate percentage increase from t = 0
+    CircularityChange = abs(Circularity - InitialCircularity) / InitialCircularity)  %>% # Calculate the absolute relative change in circularity
+  group_by(ObjectId) %>%
+  mutate(R = case_when( CircularityChange < 0.1 & PercentIncrease < 10 ~ 1,TRUE ~ 0 ), # R: Resting phase, no significant change in area and circularity
+         S = case_when(CircularityChange < 0.1 & PercentIncrease >= 10 ~ 1,TRUE ~ 0 ), # S: Swelling phase, significant change in area but not in circularity
+         G = case_when(CircularityChange >= 0.1 & PercentIncrease >= 50 ~ 1 , TRUE ~ 0 ),  # G: Germ tube formation, significant change in both area and circularity
+         missing = case_when(is.na(Area) & sum(S + G) == 0 ~ 1, TRUE ~ 0)) %>%
+  mutate(R = na_if(R, 0), S = na_if(S, 0), G = na_if(G, 0)) %>%  # Convert zeros to NAs for clarity in the dataset
+  mutate(R = na.locf0(R), S = na.locf0(S), G = na.locf0(G))%>% # Fill NA values with the last observation carried forward to maintain state
+  ungroup()%>%
+  mutate(status = case_when(G == 1 ~ 2, # Status 2 if germ tube formation is confirmed
+                            S == 1 & is.na(G) ~ 1,TRUE ~ 0))%>% # Status 1 if only swelling is confirmed # Status 0 otherwise
+  mutate(S = case_when(status > 0 ~ 1,TRUE ~ 0 ), 
+         G = case_when(status > 1 ~ 1,TRUE ~ 0 ))# Update S and G columns based on final status for clarity
+
+############################################
+nt <- t %>%
+  select(well, ObjectId, time, S, G, missing, species) %>%
+  mutate(
+    # Convert 'time' from seconds to discrete time points (1 to 24)
+    # by dividing by 60 (to convert seconds to minutes) and then adding 1 to start from time point 1
+    time = time / 60 + 1,# Convert the resulting float to an integer 
+    time = as.integer(time)
+  )
+
+M <- nt %>% 
+  group_by(well,species) %>% 
+  mutate(count = n_distinct(ObjectId)) %>%
+  ungroup() %>% 
+  group_by(well, time, count,species)%>%
+  summarise_at(c('S','G','missing'),list(sum =sum)) %>% 
+  ungroup()
+
+
+s <- M[,1:5]# Selects columns 'well', 'filename', 'time', 'count', 'S_sum'
+g <- M[,c(1:4,6)] # Selects columns 'well', 'filename', 'time', 'count', 'G_sum'
+
+meltG <- spread(g,key=time,value = G_sum)
+meltS <- spread(s,key=time,value = S_sum)
+
+G <- meltG[, c("well", 'count', "species", c(1:9,11,13,15,17,19,21,23,25))]
+S <- meltS[, c("well", 'count',"species", c(1:9,11,13,15,17,19,21,23,25))]
+
+counts.per.intervals <- as.character(c(1:9,11,13,15,17,19,21,23,25))
+
+#counts.per.intervals <- c(1:9, 11, 13, 15, 17, 19, 21, 23, 24)
+#unique(S$well)
+
+S <- S %>%
+  filter(well %in% c("Acetyl cysteine washed",
+                     "12 hour treatment washed +proline +Acetyl cys" ,"10 hour treatment washed +proline +Acetyl cys"  ,
+                     "8 hour treatment washed +proline +Acetyl cys", "6 hour treatment washed +proline +Acetyl cys",
+                     "4 hour treatment washed +proline +Acetyl cys" , "2 hour treatment washed +proline +Acetyl cys"   )) %>%
+  as.data.frame()
+
+
+S1 <- S %>%
+  group_by(well) %>%  # Include 'species' in the grouping
+  summarize(across(where(is.numeric), sum, na.rm = TRUE), .groups = 'drop') %>%
+  as.data.frame()
+
+
+
+G <- G %>%
+  filter(well %in% c("Acetyl cysteine washed",
+                     "12 hour treatment washed +proline +Acetyl cys","10 hour treatment washed +proline +Acetyl cys",
+                     "8 hour treatment washed +proline +Acetyl cys", "6 hour treatment washed +proline +Acetyl cys",
+                     "4 hour treatment washed +proline +Acetyl cys","2 hour treatment washed +proline +Acetyl cys"  )) %>%
+  as.data.frame()
+
+G[G[, 20] == 0, 20] <- 1 #if at t = 24 there is 0 spores germinate change the 0 to 1. 
+
+G1 <- G %>%
+  group_by(well) %>%
+  summarize(across(where(is.numeric), sum, na.rm = TRUE),.groups = 'drop') %>%
+ as.data.frame()
+
+
+Germination <-  germination.indices(G1, total.seeds.col = "count", # Column that represents the total number of spores
+                               counts.intervals.cols = counts.per.intervals,# Columns that represent the counts at each time interval
+                               intervals = c(1:9,11,13,15,17,19,21,23,25), partial = F)# the exact intervals used in the analysis #only complete data should be used in the calculations
+
+Swelling <-  germination.indices(S1, total.seeds.col = "count",
+                              counts.intervals.cols = counts.per.intervals,
+                              intervals = c(1:9,11,13,15,17,19,21,23,25), partial = FALSE)
+
+# 'FourPHFfit.bulk' is a function designed to perform bulk curve fitting 
+fits <- FourPHFfit.bulk(S1, total.seeds.col = "count", #S1:sum of 3 replicates of swelling
+                        counts.intervals.cols = counts.per.intervals,
+                        intervals = c(1:9,11,13,15,17,19,21,23,25), partial = F,
+                        tmax = 24)
+
+fitg <- FourPHFfit.bulk(G1, total.seeds.col = "count", #G1:sum of 3 replicates of germ tube formation
+                        counts.intervals.cols = counts.per.intervals,
+                        intervals = c(1:9,11,13,15,17,19,21,23,25), partial =FALSE,
+                        tmax = 24)
+
+
+data.points <- pivot_longer(S[,c(1:20)],cols=4:20,names_to = "Time")
+data.points$Percent <- data.points$value/data.points$count*100
+data.points$Time <- as.numeric(data.points$Time)
+
+curvesplot <- plot(fits, group.col = "well")
+fit.data <- data.frame(Time = curvesplot$data$intervals, value = curvesplot$data$csgp,well = curvesplot$data$well)
+fit.data$Time <- as.numeric(fit.data$Time) 
+
+ggplot()+
+  geom_point(data = data.points,aes(x = Time, y = Percent, colour = well),size = 1)+
+  geom_line(data = fit.data,aes(x = Time, y = value, colour = well), size =1.5)+
+  scale_color_manual(values = c("red3", "navy","darkgreen" ,"orange", "hotpink", "lightblue3", "maroon"))+
+  theme_classic(base_size = 15)+
+  labs(title="",x ="Time (h)", y = "Swelling (%)")+ ylim(0,100)+
+  scale_x_continuous(breaks = seq(0, 24, by = 6), limits = c(0, 24))+
+  theme(
+        axis.text.y = element_text(color = "black"),
+        axis.text.x = element_text(color = "black"),legend.position = "bottom") 
+
+data.points <- pivot_longer(G[,c(1:20)],cols=4:20,names_to = "Time")
+data.points$Percent <- data.points$value/data.points$count*100
+data.points$Time <- as.numeric(data.points$Time) 
+
+curvesplot <- plot(fitg, group.col = "well")
+fit.data <- data.frame(Time = curvesplot$data$intervals, value = curvesplot$data$csgp,well = curvesplot$data$well)
+fit.data$Time <- as.numeric(fit.data$Time) 
+
+ggplot()+
+  geom_point(data = data.points,aes(x = Time, y = Percent, colour = well),size = 1)+
+  geom_line(data = fit.data,aes(x = Time, y = value, colour = well), size =1.5)+
+  scale_color_manual(values = c("red3", "navy","darkgreen" ,"orange", "hotpink", "lightblue3", "maroon"))+
+  theme_classic(base_size = 15)+
+  labs(title="",x ="Time (h)", y = "Germ tube formation (%)")+ ylim(0,100)+
+  scale_x_continuous(breaks = seq(0, 24, by = 6), limits = c(0, 24))+
+  theme(
+        axis.text.y = element_text(color = "black"),
+        axis.text.x = element_text(color = "black"),legend.position = "bottom") 
+
+###############################################
+
+swell_labeled <- Swelling %>%
+  mutate(Type = "swelling")  # Add a column with all entries as 'swelling'
+
+germ_labeled <- Germination %>%
+  mutate(Type = "germination")  # Add a column with all entries as 'germination'
+
+# Combine the two dataframes into a single dataframe
+combined_data <- rbind(swell_labeled, germ_labeled)
+#colnames(combined_data)
+
+
+selected_df <- combined_data %>%
+  select(well,Type, count, FirstGermTime, GermPercent, PeakGermTime,t50_Coolbear,CVG, #CVG:Coefficient of Velocity of Germination #Germination rate in %
+         GermSpeedAccumulated_Percent, MeanGermTime,VarGermTime,SEGermTime,MeanGermRate,VarGermRate,
+         SEGermRate,WeightGermPercent, #WGP: rate of germination is as important as the final germination percentage
+         GermSpeed_Count,GermUncertainty) %>%
+  mutate(
+    # Convert data types only if necessary; otherwise, ensure cleanliness at the data loading phase.
+    GermPercent = as.numeric(GermPercent),
+    Germ_proportion = GermPercent / 100,
+    
+    # Standard error and Confidence Intervals for GermPercent
+    SE_Germ = sqrt(Germ_proportion * (1 - Germ_proportion) / count),
+    CI_lower_Germ = 100 * (Germ_proportion - 1.96 * SE_Germ),
+    CI_upper_Germ = 100 * (Germ_proportion + 1.96 * SE_Germ),
+    
+    # Handle t50_Coolbear; check if conversion is needed
+    t50_Coolbear = as.numeric(t50_Coolbear),
+    SE_t50 = sd(t50_Coolbear, na.rm = TRUE) / sqrt(count),  # Include na.rm if missing values might be present
+    CI_lower_t50 = t50_Coolbear - 1.96 * SE_t50,
+    CI_upper_t50 = t50_Coolbear + 1.96 * SE_t50,
+    
+    # Handle CVG; ensure it is numeric
+    CVG = as.numeric(CVG),
+    CVG_proportion = CVG / 100,
+    SE_CVG = sqrt(CVG_proportion * (1 - CVG_proportion) / count),
+    CI_lower_CVG = 100 * (CVG_proportion - 1.96 * SE_CVG),
+    CI_upper_CVG = 100 * (CVG_proportion + 1.96 * SE_CVG),
+    
+    CI_lower_MeanGermTime = MeanGermTime - 1.96 * SEGermTime,
+    CI_upper_MeanGermTime = MeanGermTime + 1.96 * SEGermTime,
+    
+    
+    WeightGermPercent = as.numeric(WeightGermPercent),
+    WGP_proportion = WeightGermPercent/ 100,
+    SE_WGP= sqrt(WGP_proportion* (1-WGP_proportion) / count),
+    CI_lower_WGP = 100 * (WGP_proportion -1.96 * SE_WGP),
+    CI_upper_WGP = 100 * (WGP_proportion +1.96 * SE_WGP),
+    
+    GermUncertainty = as.numeric(GermUncertainty),
+    SE_Uncert = sd(GermUncertainty, na.rm = TRUE) / sqrt(count),  # Include na.rm if missing values might be present
+    CI_lower_Uncert = GermUncertainty - 1.96 * SE_Uncert,
+    CI_upper_Uncert = GermUncertainty + 1.96 * SE_Uncert
+    )
+#WGP emphasizes quick germination by prioritizing early sprouting,
+#while CVG assesses overall germination speed and efficiency without focusing on the timing of germination.  
+
+selected_df <- selected_df %>%
+  select(well,Type, count, FirstGermTime, GermPercent,CI_lower_Germ,CI_upper_Germ, PeakGermTime,t50_Coolbear,CI_lower_t50,CI_upper_t50, 
+         MeanGermTime,CI_lower_MeanGermTime, CI_upper_MeanGermTime,CVG, CI_lower_CVG,CI_upper_CVG,WeightGermPercent,CI_lower_WGP,
+         CI_upper_WGP,GermUncertainty, CI_lower_Uncert, CI_upper_Uncert) %>%
+  mutate(across(where(is.numeric), round, digits = 2))
+
+
+write.csv(selected_df, "germination2.csv")
+
