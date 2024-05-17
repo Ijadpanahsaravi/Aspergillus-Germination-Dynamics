@@ -1,0 +1,74 @@
+df = read.csv("ory1.csv")
+df = df[df$well %in% c ("Ala-H", "Ala-L", "Pro-H", "Pro-L", "Arg-L", "Arg-H"), ]
+dft0 = filter(df, df$time==0) %>% 
+  mutate(Contrast_rank_by_Item_group = ntile(Contrast,100))%>% 
+  filter( Contrast_rank_by_Item_group < 20 & Contrast_rank_by_Item_group > 5  ) 
+dfn= df[df$ObjectId %in% dft0$ObjectId,]
+write.csv(dfn,"ter3LowCon.csv")
+
+df = read.csv("ter3.csv")
+df = df[df$well %in% c ("Ala-H", "Ala-L", "Pro-H", "Pro-L", "Arg-L", "Arg-H"), ]
+dft0 = filter(df, df$time==0) %>% 
+  mutate(Contrast_rank_by_Item_group = ntile(Contrast,100)) %>% 
+  filter( Contrast_rank_by_Item_group > 80 & Contrast_rank_by_Item_group < 95  ) 
+dfn= df[df$ObjectId %in% dft0$ObjectId,]
+write.csv(dfn,"terhighcon3.csv")
+
+df = read.csv("total.csv")
+df = df[df$well %in% c ("Ala-H", "Ala-L", "Pro-H", "Pro-L", "Arg-L", "Arg-H"), ]
+dft0 = filter(df, df$time==0) %>% 
+  mutate(Contrast_rank_by_Item_group = ntile(Contrast,100)) %>% 
+  filter( Contrast_rank_by_Item_group > 35 & Contrast_rank_by_Item_group < 65  ) 
+dfn= df[df$ObjectId %in% dft0$ObjectId,]
+write.csv(dfn,"termidCon3.csv")
+
+t <- read.csv("nid1LowCon.csv")
+
+t = t[t$time %in% c("0"),]
+p = ggplot(t, aes(Area, Contrast)) +
+  geom_jitter( size = 0.1, color= "#D55E00")+xlim(40, 250)+ ylim(0, 0.5)+
+  theme_classic(base_size = 21)
+
+
+b <- read.csv("terhighBig1.csv")
+b = b[b$time %in% c("0"),]
+
+v <- read.csv("terhighSmall1.csv")
+v = v[v$time %in% c("0"),]
+
+c <- read.csv("terlowBig1.csv")
+c = c[c$time %in% c("0"),]
+
+d <- read.csv("terlowSmall1.csv")
+d = d[d$time %in% c("0"),]
+
+p + geom_jitter(data=b, aes(Area, Contrast), size = 0.1, color= "#D55E00" ) + 
+  geom_jitter(data=v, aes(Area, Contrast), size = 0.1, color= "#0072B2" )+
+  geom_jitter(data=c, aes(Area, Contrast), size = 0.1, color= "#0072B2" )+
+  geom_jitter(data=d, aes(Area, Contrast), size = 0.1, color= "#D55E00"  )
+  
+
+df <- read.csv("ter1.csv")
+df = df[df$well %in% c ("Ala-H", "Ala-L", "Pro-H", "Pro-L", "Arg-L", "Arg-H"), ]
+df = df[df$time %in% c("0"),]
+p = ggplot(df, aes(Area, Contrast)) +
+  geom_jitter( size = 0.1, color= "gray")+xlim(40, 250)+ ylim(0, 0.5)+
+  theme_classic(base_size = 21)
+
+b <- read.csv("terBig1.csv")
+b = b[b$time %in% c("0"),]
+
+v <- read.csv("terSmall1.csv")
+v = v[v$time %in% c("0"),]
+
+c <- read.csv("terhighcon1.csv")
+c = c[c$time %in% c("0"),]
+
+d <- read.csv("ter1LowCon.csv")
+d = d[d$time %in% c("0"),]
+
+p + geom_jitter(data=c, aes(Area, Contrast), size = 0.1, color= "navy" )+
+  geom_jitter(data=d, aes(Area, Contrast), size = 0.1, color= "navy"   )
+  
+p + geom_jitter(data=b, aes(Area, Contrast), size = 0.1, color= "firebrick3" ) + 
+  geom_jitter(data=v, aes(Area, Contrast), size = 0.1, color= "firebrick3" )
