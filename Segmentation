@@ -1,0 +1,177 @@
+rm(list = ls())
+library(dplyr, quietly = T)
+library(readxl, quietly = T)
+library(data.table, quietly = T)
+library(FNN, quietly = T)
+library(tidyr)
+setwd("G:/OneDrive - Universiteit Utrecht/Desktop/sjs samples/cys+his")
+opt <- data.frame(c(1))
+opt$directory  = "G:/OneDrive - Universiteit Utrecht/Desktop/sjs samples/cys+his"
+opt$order = paste0(opt$directory,"/oCellolist.xlsx")
+opt$sheet = 1
+
+ord_file          <- opt$order
+xl_files          <- list.files(paste0(opt$directory,"/input"), pattern = ".xlsx", full.names = T)
+xl_file           <- xl_files[1]
+subset_raw          <- list.files(paste0(opt$directory,"/subset"), pattern = ".csv", full.names= T)
+
+filename        <- gsub(".*([0-9]{4}.*$)", "\\1", xl_files)
+input_order      <- gsub("^.*([A-Z]{1}[0-9]{1,2}).xlsx$", '\\1', xl_files)
+subset_order     <- gsub("^.*([A-Z]{1}[0-9]{1,2})_Rep_.*_.*$","\\1", subset_raw)
+#
+subset_f = subset_raw[match(subset_order,input_order)]
+#
+
+inds = which(input_order %in% subset_order ) # Match input folder filder with files in subset folder
+data_set = data.frame(subset =subset_raw, data = xl_files[inds]) # make table to show the matching folders (use to check correct matching)
+
+#Obtain time intervals used in the experiment: check if printed time corresponds to the times used in the experiment
+#Note: Here, I assumed only 1 time-scheme is used in the experiment, per 'wells-plate' just 1 interval will be obtained.
+xl <- read_excel(xl_file, sheet = 1 , n_max = 30, col_names = F)
+time_in_min <- function(xl){
+  dims <- which(grepl("Repetition interval", xl[[1]]))
+  if (length(dims) > 1) {
+    dim  <- paste0("B",dims[1], ":", "C",dims[2])
+  } else {
+    dim  <- paste0("B", dims[1])
+  }
+  times<- as.data.frame(read_excel(xl_file, sheet = 1, range = dim, col_types = "date", col_names = F))
+  if (length(times)> 1){
+    reps <- paste0("B", which(grepl("Repetitions", xl[[1]])))
+    rep  <- as.numeric(read_excel(xl_file, sheet = 1, range = reps, col_names = F))
+    res <- as.POSIXlt(times[,1])
+    res2 <- as.POSIXlt(times[,2])
+    int  <- as.numeric(difftime(res[2], res[1], units="min") + res[1]$min)
+    mins <- cbind((res$hour*60 + res$min),res2$hour*60+res$min)
+    cat(paste("first interval=", mins[1,1],"minutes"),
+        paste("second interval=", mins[2,2], "minutes"),
+        paste("second interval starts after:", int),
+        sep = "\n")
+    f.int<- seq(from = 0, to = (int-mins[1,1]), by = mins[1,1])
+    s.int<- seq(from = max(f.int)+mins[2,2],
+                to   = max(f.int)+(rep-length(f.int))*mins[2,2],
+                by   = mins[2,2])
+    c.int <- c(f.int, s.int)
+  }else{
+    reps <- paste0("B", which(grepl("Repetitions", xl[[1]])))
+    rep  <- as.numeric(read_excel(xl_file, sheet = 1, range = reps, col_names = F))
+    res <- as.POSIXlt(times[,1])
+    mins <- cbind((res$hour*60 + res$min))
+    cat(paste("interval=", mins[1,1],"minutes in file:", xl_file),
+        sep = "\n")
+    f.int<- seq(from = 0, to = (mins[1,1])*(rep-1), by = mins[1,1])
+  }} #Get intervals
+interval = time_in_min(xl)
+
+colnames_xl = c('FocusedObject.Id','Area', 'Circularity' ,'XPosition', 'YPosition')
+#, 'BranchPoints', 'Elongation','Granularity', 'SkeletonLength', 'ThinnedLength','Contrast'
+
+#The function below is the actual nearest-neighbour finding. Often the .csv file types are differently encoded and this will cause some problems 
+#It is not hard to fix, but you should learn to recognize these kind of issues
+Process_plate <-function(i){
+  ss = as.character(data_set$subset[i])
+  ds =as.character(data_set$data[i])
+  
+  line_reader = gsub('\\[|\\]', '"', readLines(ss,encoding = 'UTF-16LE', skipNul = T))
+  rowID = which('Segmentation objects' == line_reader)
+  subset_table = line_reader %>% read.csv(text = .,skip =rowID + 1, stringsAsFactors=FALSE, header = T, check.names = F, sep = ',', dec = '.')
+  #print(head(subset_table))
+  
+  subset <- subset_table %>% select(colnames_xl) %>% filter_all(any_vars(!is.na(.)))
+  #print(subset)
+  rm(rowID,line_reader, subset_table)
+  make_xl_lst<- function(xl_file){
+    sheet_num = length(excel_sheets(xl_file))
+    
+    well = read_excel(xl_file, sheet = 2, n_max = 1)
+    clnms = colnames(well)
+    well = well %>%
+      separate('ScanArea.Name', into =c('well', 'rep'), sep = ' ') %>%
+      select(well)
+    read_excels <- function(sheet_num){
+      df = read_excel(xl_file, 
+                      sheet = sheet_num, 
+                      trim_ws = T, 
+                      range = cell_cols(which(clnms %in% colnames_xl)))%>%
+        mutate(well = well$well)
+      #separate( col = "ScanArea.Name", into = c('well', 'repition'), sep = ' ')
+      return(df)
+    } 
+    
+    xl_list  = lapply(2:sheet_num, read_excels)
+    return(xl_list)
+  }
+  xl_list = make_xl_lst(ds)
+  
+  parent_child <- matrix(nrow = nrow(subset),
+                         ncol = length(xl_list),
+                         dimnames = list(na.omit(subset$FocusedObject.Id)))
+  output_list <- replicate(length(colnames_xl), parent_child, simplify = F)
+  #print(class(output_list[[i]]))
+  names(output_list) = colnames_xl
+  
+  first <-subset
+  for (x in 1:(length(xl_list))){
+    
+    lastRow <- nrow(xl_list[[x]])
+    second <- xl_list[[x]][-lastRow,]
+    hits <- c()
+    df            = first[c("XPosition", "YPosition")]
+    df[is.na(df)] <- 5000
+    for(index in 1:nrow(subset)){
+      location_first= df[index,]
+      hit           = get.knnx(second[c("XPosition", "YPosition")],location_first, k = 1, algorithm = 'brute' )
+      #print(hit)
+      hit_index     = hit[[1]]
+      location_hit  = second[c("XPosition", "YPosition")][as.numeric(hit_index),]
+      rev           = get.knnx(df,location_hit, k = 1 ,  algorithm = 'brute')
+      rev_index     = rev[[1]]
+      #print(rev)
+      if (rev_index == index & rev[[2]] < 50){
+        hits <- append(hits, as.numeric(hit_index))
+        for(i in colnames_xl){
+          output_list[[i]][as.numeric(index),x] <- second[[i]][as.numeric(hit_index)]
+        }
+        
+      } else {
+        hits <- append(hits, NA)
+        for(i in colnames_xl){
+          output_list[[i]][as.numeric(index),x] <- NA
+        }
+      }
+    }
+    if (length(unique(hits)) == 1 & is.na(unique(hits)[1]))  {next}
+    else  {first = second[hits,] }   
+  }
+  
+  reads <- function(i){
+    df <- reshape2::melt(output_list[[i]], varnames = c("ObjectId", "time"),value.name = names(output_list)[i])
+  }
+  df <- Reduce(function(x,y) merge(x,y, by=c("ObjectId","time")), lapply(1:length(names(output_list)), reads))
+  df <-df[order(df$ObjectId, df$time),]
+  df$time <- as.numeric(as.character(df$time))
+  df$ObjectId <- as.factor(df$ObjectId)
+  df$well <- xl_list[[1]]$well[[1]]
+  track = df$Area[df$time == length(xl_list) -1 ] 
+  tot = length(track)
+  grown = length(which(track > 0))
+  
+  cat(paste("INFO\nWell:", df$well[1],
+            "\nNumber of repetitions:", length(xl_list),
+            "\nNumber of objects tracked:", tot, 
+            "\nObjects tracked until last timepoint:", grown, "\n"))
+  rm(output_list, track, tot,grown )
+  return(df)
+}
+dfs<- lapply(1:length(subset_raw), Process_plate)
+
+# Here we match our results with the input file to have all info in 1 table
+t <- rbindlist(dfs)
+DTO <-read_excel(ord_file, sheet = as.numeric(opt$sheet))
+out <- left_join(as.data.frame(t), DTO, by = "well")
+out$time <- interval[out$time]
+
+#finally a new .csv is generated containing our data:
+write.csv(out,paste0(opt$directory, '/1.csv'), row.names = F)
+
+
