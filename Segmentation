@@ -4,9 +4,9 @@ library(readxl, quietly = T)
 library(data.table, quietly = T)
 library(FNN, quietly = T)
 library(tidyr)
-setwd("G:/OneDrive - Universiteit Utrecht/Desktop/sjs samples/cys+his")
+setwd("")
 opt <- data.frame(c(1))
-opt$directory  = "G:/OneDrive - Universiteit Utrecht/Desktop/sjs samples/cys+his"
+opt$directory  = ""
 opt$order = paste0(opt$directory,"/oCellolist.xlsx")
 opt$sheet = 1
 
