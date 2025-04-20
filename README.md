@@ -1,5 +1,6 @@
 # Aspergillus Germination Dynamics
 
+**Custom R scripts for analyzing phenotypic heterogeneity and germination dynamics in *Aspergillus niger* spores using oCelloScope time-lapse imaging.**
 
 ## 📚 Background & Scientific Rationale
 Phenotypic heterogeneity plays a central role in the germination behavior of Aspergillus spores. Earlier methods (Chapters 2–4) relied on fixed area and circularity thresholds, which introduced bias across species and subpopulations. The improved pipeline (Chapter 5) defines germination relative to initial spore size and shape, accommodating asynchronous germination and subpopulation differences.
