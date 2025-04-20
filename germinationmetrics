@@ -1,18 +1,22 @@
-pkgs <- c("dplyr", "readxl","data.table","ggplot2","tidyr","Metrics","growthrates", "openxlsx","zoo", "germinationmetrics", "reshape", "reshape2", "pals", "stringr")
+
+pkgs <- c("dplyr", "readxl","data.table","ggplot2","tidyr","Metrics","growthrates", "openxlsx",
+          "zoo", "germinationmetrics", "reshape", "reshape2", "stringr")
 lapply(pkgs, library, character.only = T)
 
+setwd("G:/sjs samples/reloadSJS/new results") 
+
+path = "G:/sjs samples/reloadSJS/new results/" 
 
 csv = list.files(path = path, pattern = '*.csv')
 csv_read <- function(csv){
   df <- read.csv(paste0(path, csv)) %>%
-    dplyr::select(ObjectId,time,Area,Circularity, well, species)%>% # Select only the necessary columns to keep in the data frame
+    dplyr::select(ObjectId,time,Area,Circularity,Contrast, well, species)%>% # Select only the necessary columns to keep in the data frame
     mutate(filename = as.character(csv))  # Add a new column that stores the name of the CSV file as a character string
   return(df)
 }
 df <- do.call(rbind, lapply(csv, csv_read))# Combine the results into one data frame
 
-
-t <- data %>%
+t <- df %>%
   group_by(ObjectId) %>%
   mutate(
     InitialArea = first(Area, na.rm = TRUE), # Capture the initial area at t = 0, handling NA
@@ -32,9 +36,10 @@ t <- data %>%
   mutate(S = case_when(status > 0 ~ 1,TRUE ~ 0 ), 
          G = case_when(status > 1 ~ 1,TRUE ~ 0 ))# Update S and G columns based on final status for clarity
 
-############################################
+##########
+
 nt <- t %>%
-  select(well, ObjectId, time, S, G, missing, species) %>%
+  select(well, ObjectId, time, S, G, missing, species, filename) %>%
   mutate(
     # Convert 'time' from seconds to discrete time points (1 to 24)
     # by dividing by 60 (to convert seconds to minutes) and then adding 1 to start from time point 1
@@ -42,66 +47,56 @@ nt <- t %>%
     time = as.integer(time)
   )
 
+
 M <- nt %>% 
-  group_by(well,species) %>% 
+  group_by(well,filename, species) %>% 
   mutate(count = n_distinct(ObjectId)) %>%
   ungroup() %>% 
-  group_by(well, time, count,species)%>%
+  group_by(well, time, count,filename, species)%>%
   summarise_at(c('S','G','missing'),list(sum =sum)) %>% 
   ungroup()
 
 
-s <- M[,1:5]# Selects columns 'well', 'filename', 'time', 'count', 'S_sum'
-g <- M[,c(1:4,6)] # Selects columns 'well', 'filename', 'time', 'count', 'G_sum'
+
+s <- M[,1:6]# Selects columns 'well','time', 'count', 'species', 'S_sum', "filename"
+g <- M[,c(1:5,7)] # Selects columns 'well', 'time','count', 'species', 'G_sum', "filename"
 
 meltG <- spread(g,key=time,value = G_sum)
 meltS <- spread(s,key=time,value = S_sum)
 
-G <- meltG[, c("well", 'count', "species", c(1:9,11,13,15,17,19,21,23,25))]
-S <- meltS[, c("well", 'count',"species", c(1:9,11,13,15,17,19,21,23,25))]
+G <- meltG[, c("well", 'count', "filename","species" , c(1:9,11,13,15,17,19,21,23,25))]
+S <- meltS[, c("well", 'count',"filename", "species", c(1:9,11,13,15,17,19,21,23,25))]
+
 
 counts.per.intervals <- as.character(c(1:9,11,13,15,17,19,21,23,25))
 
-#counts.per.intervals <- c(1:9, 11, 13, 15, 17, 19, 21, 23, 24)
-#unique(S$well)
-
 S <- S %>%
-  filter(well %in% c("Acetyl cysteine washed",
-                     "12 hour treatment washed +proline +Acetyl cys" ,"10 hour treatment washed +proline +Acetyl cys"  ,
-                     "8 hour treatment washed +proline +Acetyl cys", "6 hour treatment washed +proline +Acetyl cys",
-                     "4 hour treatment washed +proline +Acetyl cys" , "2 hour treatment washed +proline +Acetyl cys"   )) %>%
+  filter(well %in% c( "10 mM Pro" ), 
+         species %in% c("SJS128", "N402", "N402 38h")) %>%
   as.data.frame()
 
-
 S1 <- S %>%
-  group_by(well) %>%  # Include 'species' in the grouping
+  group_by(well, species) %>%  # Include 'species' in the grouping
   summarize(across(where(is.numeric), sum, na.rm = TRUE), .groups = 'drop') %>%
   as.data.frame()
 
-
+Swelling <-  germination.indices(S1, total.seeds.col = "count",
+                                 counts.intervals.cols = counts.per.intervals,
+                                 intervals = c(1:9,11,13,15,17,19,21,23,25), partial = FALSE)
 
 G <- G %>%
-  filter(well %in% c("Acetyl cysteine washed",
-                     "12 hour treatment washed +proline +Acetyl cys","10 hour treatment washed +proline +Acetyl cys",
-                     "8 hour treatment washed +proline +Acetyl cys", "6 hour treatment washed +proline +Acetyl cys",
-                     "4 hour treatment washed +proline +Acetyl cys","2 hour treatment washed +proline +Acetyl cys"  )) %>%
+  filter(well %in% c( "10 mM Pro" ), 
+         species %in% c("SJS128", "N402", "N402 38h")) %>%
   as.data.frame()
 
-G[G[, 20] == 0, 20] <- 1 #if at t = 24 there is 0 spores germinate change the 0 to 1. 
-
 G1 <- G %>%
-  group_by(well) %>%
-  summarize(across(where(is.numeric), sum, na.rm = TRUE),.groups = 'drop') %>%
- as.data.frame()
+  group_by(well, species) %>%  # Include 'species' in the grouping
+  summarize(across(where(is.numeric), sum, na.rm = TRUE), .groups = 'drop') %>%
+  as.data.frame()
+Germination <-  germination.indices(G, total.seeds.col = "count", # Column that represents the total number of spores
+                                    counts.intervals.cols = counts.per.intervals,# Columns that represent the counts at each time interval
+                                    intervals = c(1:9,11,13,15,17,19,21,23,25), partial = F)# the exact intervals used in the analysis #only complete data should be used in the calculations
 
-
-Germination <-  germination.indices(G1, total.seeds.col = "count", # Column that represents the total number of spores
-                               counts.intervals.cols = counts.per.intervals,# Columns that represent the counts at each time interval
-                               intervals = c(1:9,11,13,15,17,19,21,23,25), partial = F)# the exact intervals used in the analysis #only complete data should be used in the calculations
-
-Swelling <-  germination.indices(S1, total.seeds.col = "count",
-                              counts.intervals.cols = counts.per.intervals,
-                              intervals = c(1:9,11,13,15,17,19,21,23,25), partial = FALSE)
 
 # 'FourPHFfit.bulk' is a function designed to perform bulk curve fitting 
 fits <- FourPHFfit.bulk(S1, total.seeds.col = "count", #S1:sum of 3 replicates of swelling
@@ -115,43 +110,44 @@ fitg <- FourPHFfit.bulk(G1, total.seeds.col = "count", #G1:sum of 3 replicates o
                         tmax = 24)
 
 
-data.points <- pivot_longer(S[,c(1:20)],cols=4:20,names_to = "Time")
+data.points <- pivot_longer(S[,c(1:21)],cols=5:21,names_to = "Time")
 data.points$Percent <- data.points$value/data.points$count*100
 data.points$Time <- as.numeric(data.points$Time)
 
-curvesplot <- plot(fits, group.col = "well")
-fit.data <- data.frame(Time = curvesplot$data$intervals, value = curvesplot$data$csgp,well = curvesplot$data$well)
+curvesplot <- plot(fits, group.col = "species")
+fit.data <- data.frame(Time = curvesplot$data$intervals, value = curvesplot$data$csgp, species = curvesplot$data$species)
 fit.data$Time <- as.numeric(fit.data$Time) 
 
 ggplot()+
-  geom_point(data = data.points,aes(x = Time, y = Percent, colour = well),size = 1)+
-  geom_line(data = fit.data,aes(x = Time, y = value, colour = well), size =1.5)+
-  scale_color_manual(values = c("red3", "navy","darkgreen" ,"orange", "hotpink", "lightblue3", "maroon"))+
+  geom_point(data = data.points,aes(x = Time, y = Percent, colour = species),size = 1)+
+  geom_line(data = fit.data,aes(x = Time, y = value, colour = species), size =1.5)+
+  scale_color_manual(values = c("red3", "navy","darkgreen" ))+
   theme_classic(base_size = 15)+
   labs(title="",x ="Time (h)", y = "Swelling (%)")+ ylim(0,100)+
   scale_x_continuous(breaks = seq(0, 24, by = 6), limits = c(0, 24))+
   theme(
-        axis.text.y = element_text(color = "black"),
-        axis.text.x = element_text(color = "black"),legend.position = "bottom") 
+    axis.text.y = element_text(color = "black"),
+    axis.text.x = element_text(color = "black"),legend.position = "bottom")
 
-data.points <- pivot_longer(G[,c(1:20)],cols=4:20,names_to = "Time")
+
+data.points <- pivot_longer(G[,c(1:21)],cols=5:21,names_to = "Time")
 data.points$Percent <- data.points$value/data.points$count*100
 data.points$Time <- as.numeric(data.points$Time) 
 
-curvesplot <- plot(fitg, group.col = "well")
-fit.data <- data.frame(Time = curvesplot$data$intervals, value = curvesplot$data$csgp,well = curvesplot$data$well)
+curvesplot <- plot(fitg, group.col = "species")
+fit.data <- data.frame(Time = curvesplot$data$intervals, value = curvesplot$data$csgp,species = curvesplot$data$species)
 fit.data$Time <- as.numeric(fit.data$Time) 
 
 ggplot()+
-  geom_point(data = data.points,aes(x = Time, y = Percent, colour = well),size = 1)+
-  geom_line(data = fit.data,aes(x = Time, y = value, colour = well), size =1.5)+
-  scale_color_manual(values = c("red3", "navy","darkgreen" ,"orange", "hotpink", "lightblue3", "maroon"))+
+  geom_point(data = data.points,aes(x = Time, y = Percent, colour = species),size = 1)+
+  geom_line(data = fit.data,aes(x = Time, y = value, colour = species), size =1.5)+
+  scale_color_manual(values = c("red3", "navy","darkgreen" ))+
   theme_classic(base_size = 15)+
   labs(title="",x ="Time (h)", y = "Germ tube formation (%)")+ ylim(0,100)+
   scale_x_continuous(breaks = seq(0, 24, by = 6), limits = c(0, 24))+
   theme(
-        axis.text.y = element_text(color = "black"),
-        axis.text.x = element_text(color = "black"),legend.position = "bottom") 
+    axis.text.y = element_text(color = "black"),
+    axis.text.x = element_text(color = "black"),legend.position = "bottom") 
 
 ###############################################
 
