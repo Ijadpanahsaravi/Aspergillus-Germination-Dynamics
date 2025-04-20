@@ -1,12 +1,11 @@
-
+# Load required packages
 pkgs <- c("dplyr", "readxl","data.table","ggplot2","tidyr","Metrics","growthrates", "openxlsx",
           "zoo", "germinationmetrics", "reshape", "reshape2", "stringr")
 lapply(pkgs, library, character.only = T)
-
-setwd("G:/sjs samples/reloadSJS/new results") 
-
-path = "G:/sjs samples/reloadSJS/new results/" 
-
+# Set working directory
+setwd("") 
+path = "" 
+# Read and combine all CSV files
 csv = list.files(path = path, pattern = '*.csv')
 csv_read <- function(csv){
   df <- read.csv(paste0(path, csv)) %>%
@@ -15,7 +14,7 @@ csv_read <- function(csv){
   return(df)
 }
 df <- do.call(rbind, lapply(csv, csv_read))# Combine the results into one data frame
-
+# Assign R (resting), S (swelling), G (germ tube formation) status
 t <- df %>%
   group_by(ObjectId) %>%
   mutate(
@@ -35,9 +34,7 @@ t <- df %>%
                             S == 1 & is.na(G) ~ 1,TRUE ~ 0))%>% # Status 1 if only swelling is confirmed # Status 0 otherwise
   mutate(S = case_when(status > 0 ~ 1,TRUE ~ 0 ), 
          G = case_when(status > 1 ~ 1,TRUE ~ 0 ))# Update S and G columns based on final status for clarity
-
-##########
-
+# Time rounding and group-wise sum
 nt <- t %>%
   select(well, ObjectId, time, S, G, missing, species, filename) %>%
   mutate(
@@ -47,7 +44,6 @@ nt <- t %>%
     time = as.integer(time)
   )
 
-
 M <- nt %>% 
   group_by(well,filename, species) %>% 
   mutate(count = n_distinct(ObjectId)) %>%
@@ -55,9 +51,7 @@ M <- nt %>%
   group_by(well, time, count,filename, species)%>%
   summarise_at(c('S','G','missing'),list(sum =sum)) %>% 
   ungroup()
-
-
-
+# Separate swelling and germ tube data
 s <- M[,1:6]# Selects columns 'well','time', 'count', 'species', 'S_sum', "filename"
 g <- M[,c(1:5,7)] # Selects columns 'well', 'time','count', 'species', 'G_sum', "filename"
 
@@ -66,10 +60,7 @@ meltS <- spread(s,key=time,value = S_sum)
 
 G <- meltG[, c("well", 'count', "filename","species" , c(1:9,11,13,15,17,19,21,23,25))]
 S <- meltS[, c("well", 'count',"filename", "species", c(1:9,11,13,15,17,19,21,23,25))]
-
-
 counts.per.intervals <- as.character(c(1:9,11,13,15,17,19,21,23,25))
-
 S <- S %>%
   filter(well %in% c( "10 mM Pro" ), 
          species %in% c("SJS128", "N402", "N402 38h")) %>%
@@ -83,7 +74,6 @@ S1 <- S %>%
 Swelling <-  germination.indices(S1, total.seeds.col = "count",
                                  counts.intervals.cols = counts.per.intervals,
                                  intervals = c(1:9,11,13,15,17,19,21,23,25), partial = FALSE)
-
 G <- G %>%
   filter(well %in% c( "10 mM Pro" ), 
          species %in% c("SJS128", "N402", "N402 38h")) %>%
@@ -97,7 +87,6 @@ Germination <-  germination.indices(G, total.seeds.col = "count", # Column that 
                                     counts.intervals.cols = counts.per.intervals,# Columns that represent the counts at each time interval
                                     intervals = c(1:9,11,13,15,17,19,21,23,25), partial = F)# the exact intervals used in the analysis #only complete data should be used in the calculations
 
-
 # 'FourPHFfit.bulk' is a function designed to perform bulk curve fitting 
 fits <- FourPHFfit.bulk(S1, total.seeds.col = "count", #S1:sum of 3 replicates of swelling
                         counts.intervals.cols = counts.per.intervals,
@@ -108,8 +97,7 @@ fitg <- FourPHFfit.bulk(G1, total.seeds.col = "count", #G1:sum of 3 replicates o
                         counts.intervals.cols = counts.per.intervals,
                         intervals = c(1:9,11,13,15,17,19,21,23,25), partial =FALSE,
                         tmax = 24)
-
-
+# Plot Swelling
 data.points <- pivot_longer(S[,c(1:21)],cols=5:21,names_to = "Time")
 data.points$Percent <- data.points$value/data.points$count*100
 data.points$Time <- as.numeric(data.points$Time)
@@ -128,8 +116,7 @@ ggplot()+
   theme(
     axis.text.y = element_text(color = "black"),
     axis.text.x = element_text(color = "black"),legend.position = "bottom")
-
-
+# Plot Germ tube formation
 data.points <- pivot_longer(G[,c(1:21)],cols=5:21,names_to = "Time")
 data.points$Percent <- data.points$value/data.points$count*100
 data.points$Time <- as.numeric(data.points$Time) 
