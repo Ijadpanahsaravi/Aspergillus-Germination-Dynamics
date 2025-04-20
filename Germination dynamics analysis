@@ -137,7 +137,7 @@ ggplot()+
     axis.text.x = element_text(color = "black"),legend.position = "bottom") 
 
 ###############################################
-
+#Select wells : ("1 mM Ala" ,  "1 mM Arg"  , "1 mM Glu","1 mM Pro", "10 mM Ala", "10 mM Arg" , "10 mM Glu" , "10 mM Pro")
 swell_labeled <- Swelling %>%
   mutate(Type = "swelling")  # Add a column with all entries as 'swelling'
 
@@ -202,5 +202,5 @@ selected_df <- selected_df %>%
   mutate(across(where(is.numeric), round, digits = 2))
 
 
-write.csv(selected_df, "germination2.csv")
+write.csv(selected_df, "Germination dynamics.csv")
 
