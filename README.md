@@ -2,6 +2,12 @@
 
 **Custom R scripts for analyzing phenotypic heterogeneity and germination dynamics in *Aspergillus niger* spores using oCelloScope time-lapse imaging.**
 
+## 📚 Overview
+
+This repository contains R scripts and data-processing pipelines developed during my PhD research to study fungal spore germination dynamics. The goal was to analyze phenotypic heterogeneity in swelling and germ tube formation across various *A. niger* spore populations, using method based on relative changes in spore morphology.
+
+---
+
 ## 📚 Background & Scientific Rationale
 Phenotypic heterogeneity plays a central role in the germination behavior of Aspergillus spores. Earlier methods (Chapters 2–4) relied on fixed area and circularity thresholds, which introduced bias across species and subpopulations. The improved pipeline (Chapter 5) defines germination relative to initial spore size and shape, accommodating asynchronous germination and subpopulation differences.
 
@@ -11,15 +17,11 @@ Removes the need for species-specific thresholds
 
 Is robust against size-related artifacts
 
-Is applicable to mixed populations (e.g., environmental spores or co-cultures)
+Is applicable to mixed populations (e.g., environmental samples or co-cultures)
 
 The revised pipeline enhances reproducibility and reflects biological variation, not just population averages.
 
----
 
-## 📚 Overview
-
-This repository contains R scripts and data-processing pipelines developed during my PhD research to study fungal spore germination dynamics. The goal was to analyze phenotypic heterogeneity in swelling and germ tube formation across various *A. niger* spore populations, using a novel classification method based on relative changes in spore morphology.
 
 ### 🧪 Key Concepts:
 - **Spore phenotypic heterogeneity** affects germination timing and dynamics.
@@ -73,7 +75,7 @@ Using the `germinationmetrics` R package:
 
 ---
 ## 🧠 Acknowledgements
-Some part of this pipeline builds on the germinationmetrics R package (Aravind et al., 2024), originally designed for plant seed germination. It was adapted for fungal spores to offer a universal and unbiased analysis framework.
+Some part of this pipeline builds on the germinationmetrics R package (Aravind et al., 2024), originally designed for plant seed germination. 
 
 ## ✉️ Contact
 For questions or collaborations:
